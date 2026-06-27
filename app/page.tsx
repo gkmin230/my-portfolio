@@ -32,6 +32,13 @@ export default function Home() {
             >
               소개 보기
             </Link>
+
+            <Link
+              href="/chat"
+              className="px-6 py-3 border border-border rounded-lg hover:bg-surface-muted"
+            >
+              AI 채팅
+            </Link>
           </div>
         </div>
 
@@ -42,6 +49,7 @@ export default function Home() {
             alt="developer"
             width={1200}
             height={800}
+            priority
             className="h-auto w-full rounded-lg shadow-lg shadow-gray-200 dark:shadow-black/40"
           />
         </div>

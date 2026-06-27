@@ -11,6 +11,7 @@ export default function Header() {
             <Link className="hover:text-blue-600 dark:hover:text-blue-400" href="/">Home</Link>
             <Link className="hover:text-blue-600 dark:hover:text-blue-400" href="/aboutme">About</Link>
             <Link className="hover:text-blue-600 dark:hover:text-blue-400" href="/project">Project</Link>
+            <Link className="hover:text-blue-600 dark:hover:text-blue-400" href="/chat">Chat</Link>
             <ThemeToggle />
           </div>
         </nav>
