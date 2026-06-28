@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 type Message = {
   id: number;
@@ -21,6 +21,11 @@ export default function ChatWidget() {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isSending]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -83,37 +88,9 @@ export default function ChatWidget() {
   }
 
   return (
-    <section className="mx-auto flex min-h-[calc(100vh-180px)] max-w-screen-xl flex-col px-6 py-10">
-      <div className="grid flex-1 gap-6 lg:grid-cols-[320px_1fr]">
-        <aside className="rounded-lg border border-border bg-surface p-6">
-          <p className="text-sm font-semibold text-blue-600 dark:text-blue-400">
-            Resume AI
-          </p>
-          <h1 className="mt-3 text-3xl font-bold text-foreground">
-            이력서 기반 채팅
-          </h1>
-          <p className="mt-4 text-sm leading-6 text-gray-600 dark:text-gray-300">
-            Gemini API에 질문을 보내고, 서버 API가 이력서 컨텍스트를 붙여
-            답변을 받아오는 구조입니다.
-          </p>
-
-          <div className="mt-8 space-y-3 text-sm">
-            <div className="rounded-md bg-surface-muted p-3">
-              <p className="font-semibold text-foreground">API 테스트</p>
-              <p className="mt-1 text-gray-600 dark:text-gray-300">
-                /api/hello
-              </p>
-            </div>
-            <div className="rounded-md bg-surface-muted p-3">
-              <p className="font-semibold text-foreground">채팅 엔드포인트</p>
-              <p className="mt-1 text-gray-600 dark:text-gray-300">
-                POST /api/sendMessage
-              </p>
-            </div>
-          </div>
-        </aside>
-
-        <div className="flex min-h-[620px] flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
+    <section className="mx-auto flex min-h-[calc(100vh-180px)] max-w-4xl flex-col px-6 py-10">
+      <div className="flex flex-1">
+        <div className="flex min-h-[680px] w-full flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
           <div className="border-b border-border px-5 py-4">
             <h2 className="font-semibold text-foreground">Chat</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -121,7 +98,10 @@ export default function ChatWidget() {
             </p>
           </div>
 
-          <div className="flex-1 space-y-4 overflow-y-auto bg-background p-5">
+          <div
+            className="flex-1 space-y-4 overflow-y-auto bg-background p-5"
+            aria-live="polite"
+          >
             {messages.map((chatMessage) => (
               <div
                 key={chatMessage.id}
@@ -148,6 +128,8 @@ export default function ChatWidget() {
                 </div>
               </div>
             ) : null}
+
+            <div ref={bottomRef} />
           </div>
 
           <form
