@@ -39,6 +39,18 @@ type GeminiResponse = {
   };
 };
 
+function getGeminiErrorMessage(message?: string) {
+  if (!message) {
+    return "Gemini API 요청 중 오류가 발생했습니다.";
+  }
+
+  if (message.toLowerCase().includes("quota")) {
+    return "Gemini API 사용량 한도 문제로 응답을 받을 수 없습니다. Google AI Studio에서 quota 또는 결제 상태를 확인해 주세요.";
+  }
+
+  return message;
+}
+
 function getGeminiReply(data: GeminiResponse | null) {
   if (!data) {
     return "";
@@ -120,9 +132,7 @@ export async function POST(request: Request) {
   if (!geminiResponse.ok) {
     return Response.json(
       {
-        error:
-          data?.error?.message ??
-          "Gemini API 요청 중 오류가 발생했습니다.",
+        error: getGeminiErrorMessage(data?.error?.message),
       },
       { status: geminiResponse.status },
     );
