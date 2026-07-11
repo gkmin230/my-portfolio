@@ -17,6 +17,20 @@ const initialMessages: Message[] = [
   },
 ];
 
+function getOrCreateSessionId() {
+  const storageKey = "portfolio-chat-session-id";
+  const savedSessionId = window.localStorage.getItem(storageKey);
+
+  if (savedSessionId) {
+    return savedSessionId;
+  }
+
+  const sessionId = crypto.randomUUID();
+  window.localStorage.setItem(storageKey, sessionId);
+
+  return sessionId;
+}
+
 export default function ChatWidget() {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [message, setMessage] = useState("");
@@ -52,7 +66,10 @@ export default function ChatWidget() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ message: trimmedMessage }),
+        body: JSON.stringify({
+          message: trimmedMessage,
+          sessionId: getOrCreateSessionId(),
+        }),
       });
 
       const data = (await response.json()) as {
