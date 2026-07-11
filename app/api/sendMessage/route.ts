@@ -1,3 +1,7 @@
+import { randomUUID } from "crypto";
+
+import { getMongoDatabase } from "@/lib/mongodb";
+
 const RESUME_CONTEXT = `
 이름: 민경건
 출생연도/성별: 1997년생 남성
@@ -39,6 +43,35 @@ type GeminiResponse = {
   };
 };
 
+type ChatLog =
+  | {
+      sessionId: string;
+      userMessage: string;
+      assistantMessage: string;
+      status: "success";
+      responseTimeMs: number;
+      createdAt: Date;
+    }
+  | {
+      sessionId: string;
+      userMessage: string;
+      status: "error";
+      errorType: string;
+      errorMessage: string;
+      responseTimeMs: number;
+      createdAt: Date;
+    };
+
+async function saveChatLog(chatLog: ChatLog) {
+  try {
+    const db = await getMongoDatabase();
+
+    await db.collection("chat_logs").insertOne(chatLog);
+  } catch (error) {
+    console.error("채팅 로그 MongoDB 저장 실패:", error);
+  }
+}
+
 function getGeminiErrorMessage(message?: string) {
   if (!message) {
     return "Gemini API 요청 중 오류가 발생했습니다.";
@@ -72,75 +105,162 @@ function getGeminiReply(data: GeminiResponse | null) {
 }
 
 function getMessageFromBody(body: unknown) {
-  if (!body || typeof body !== "object") {
-    return "";
+  if (!body || typeof body !== "object" || !("message" in body)) {
+    return null;
   }
 
   const { message } = body as { message?: unknown };
 
-  return typeof message === "string" ? message.trim() : "";
+  if (typeof message !== "string") {
+    return null;
+  }
+
+  const trimmedMessage = message.trim();
+
+  return trimmedMessage || null;
+}
+
+function getSessionIdFromBody(body: unknown) {
+  if (!body || typeof body !== "object" || !("sessionId" in body)) {
+    return randomUUID();
+  }
+
+  const { sessionId } = body as { sessionId?: unknown };
+
+  return typeof sessionId === "string" && sessionId.trim()
+    ? sessionId.trim()
+    : randomUUID();
 }
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
   const apiKey = process.env.GEMINI_API_KEY;
   const model = process.env.GEMINI_MODEL ?? "gemini-3.5-flash";
+  const body = await request.json().catch(() => null);
+  const sessionId = getSessionIdFromBody(body);
+  const message = getMessageFromBody(body);
+
+  if (!message) {
+    await saveChatLog({
+      sessionId,
+      userMessage: "",
+      status: "error",
+      errorType: "validation_error",
+      errorMessage: "message 값은 비어 있지 않은 문자열이어야 합니다.",
+      responseTimeMs: Date.now() - startedAt,
+      createdAt: new Date(),
+    });
+
+    return Response.json(
+      { error: "message 값은 비어 있지 않은 문자열이어야 합니다." },
+      { status: 400 },
+    );
+  }
 
   if (!apiKey) {
+    const errorMessage =
+      "GEMINI_API_KEY가 설정되어 있지 않습니다. .env.local에 GEMINI_API_KEY=발급받은키 를 추가해 주세요.";
+
+    await saveChatLog({
+      sessionId,
+      userMessage: message,
+      status: "error",
+      errorType: "missing_api_key",
+      errorMessage,
+      responseTimeMs: Date.now() - startedAt,
+      createdAt: new Date(),
+    });
+
     return Response.json(
       {
-        error:
-          "GEMINI_API_KEY가 설정되어 있지 않습니다. .env.local에 GEMINI_API_KEY=발급받은키 를 추가해 주세요.",
+        error: errorMessage,
       },
       { status: 500 },
     );
   }
 
-  const body = await request.json().catch(() => null);
-  const message = getMessageFromBody(body);
+  let geminiResponse: Response;
 
-  if (!message) {
+  try {
+    geminiResponse = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/interactions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          model,
+          system_instruction: RESUME_CONTEXT,
+          input: message,
+          generation_config: {
+            temperature: 0.7,
+            thinking_level: "low",
+          },
+        }),
+      },
+    );
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Gemini API 네트워크 오류";
+
+    await saveChatLog({
+      sessionId,
+      userMessage: message,
+      status: "error",
+      errorType: "network_error",
+      errorMessage,
+      responseTimeMs: Date.now() - startedAt,
+      createdAt: new Date(),
+    });
+
     return Response.json(
-      { error: "message 값을 JSON으로 보내주세요." },
-      { status: 400 },
+      {
+        error: "Gemini API 요청 중 네트워크 오류가 발생했습니다.",
+      },
+      { status: 500 },
     );
   }
-
-  const geminiResponse = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/interactions",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
-      body: JSON.stringify({
-        model,
-        system_instruction: RESUME_CONTEXT,
-        input: message,
-        generation_config: {
-          temperature: 0.7,
-          thinking_level: "low",
-        },
-      }),
-    },
-  );
 
   const data = (await geminiResponse.json().catch(() => null)) as
     | GeminiResponse
     | null;
 
   if (!geminiResponse.ok) {
+    const errorMessage = getGeminiErrorMessage(data?.error?.message);
+
+    await saveChatLog({
+      sessionId,
+      userMessage: message,
+      status: "error",
+      errorType: "gemini_error",
+      errorMessage,
+      responseTimeMs: Date.now() - startedAt,
+      createdAt: new Date(),
+    });
+
     return Response.json(
       {
-        error: getGeminiErrorMessage(data?.error?.message),
+        error: errorMessage,
       },
       { status: geminiResponse.status },
     );
   }
 
   const reply = getGeminiReply(data);
+  const assistantMessage = reply || "응답 텍스트를 찾지 못했습니다.";
+
+  await saveChatLog({
+    sessionId,
+    userMessage: message,
+    assistantMessage,
+    status: "success",
+    responseTimeMs: Date.now() - startedAt,
+    createdAt: new Date(),
+  });
 
   return Response.json({
-    reply: reply || "응답 텍스트를 찾지 못했습니다.",
+    reply: assistantMessage,
   });
 }
