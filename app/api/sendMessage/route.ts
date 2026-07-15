@@ -67,8 +67,15 @@ async function saveChatLog(chatLog: ChatLog) {
     const db = await getMongoDatabase();
 
     await db.collection("chat_logs").insertOne(chatLog);
+
+    return { saved: true };
   } catch (error) {
     console.error("채팅 로그 MongoDB 저장 실패:", error);
+
+    return {
+      saved: false,
+      error: error instanceof Error ? error.message : "알 수 없는 저장 오류",
+    };
   }
 }
 
@@ -141,7 +148,7 @@ export async function POST(request: Request) {
   const message = getMessageFromBody(body);
 
   if (!message) {
-    await saveChatLog({
+    const logResult = await saveChatLog({
       sessionId,
       userMessage: "",
       status: "error",
@@ -152,7 +159,11 @@ export async function POST(request: Request) {
     });
 
     return Response.json(
-      { error: "message 값은 비어 있지 않은 문자열이어야 합니다." },
+      {
+        error: "message 값은 비어 있지 않은 문자열이어야 합니다.",
+        logSaved: logResult.saved,
+        logError: logResult.error,
+      },
       { status: 400 },
     );
   }
@@ -161,7 +172,7 @@ export async function POST(request: Request) {
     const errorMessage =
       "GEMINI_API_KEY가 설정되어 있지 않습니다. .env.local에 GEMINI_API_KEY=발급받은키 를 추가해 주세요.";
 
-    await saveChatLog({
+    const logResult = await saveChatLog({
       sessionId,
       userMessage: message,
       status: "error",
@@ -174,6 +185,8 @@ export async function POST(request: Request) {
     return Response.json(
       {
         error: errorMessage,
+        logSaved: logResult.saved,
+        logError: logResult.error,
       },
       { status: 500 },
     );
@@ -205,7 +218,7 @@ export async function POST(request: Request) {
     const errorMessage =
       error instanceof Error ? error.message : "Gemini API 네트워크 오류";
 
-    await saveChatLog({
+    const logResult = await saveChatLog({
       sessionId,
       userMessage: message,
       status: "error",
@@ -218,6 +231,8 @@ export async function POST(request: Request) {
     return Response.json(
       {
         error: "Gemini API 요청 중 네트워크 오류가 발생했습니다.",
+        logSaved: logResult.saved,
+        logError: logResult.error,
       },
       { status: 500 },
     );
@@ -230,7 +245,7 @@ export async function POST(request: Request) {
   if (!geminiResponse.ok) {
     const errorMessage = getGeminiErrorMessage(data?.error?.message);
 
-    await saveChatLog({
+    const logResult = await saveChatLog({
       sessionId,
       userMessage: message,
       status: "error",
@@ -243,6 +258,8 @@ export async function POST(request: Request) {
     return Response.json(
       {
         error: errorMessage,
+        logSaved: logResult.saved,
+        logError: logResult.error,
       },
       { status: geminiResponse.status },
     );
@@ -251,7 +268,7 @@ export async function POST(request: Request) {
   const reply = getGeminiReply(data);
   const assistantMessage = reply || "응답 텍스트를 찾지 못했습니다.";
 
-  await saveChatLog({
+  const logResult = await saveChatLog({
     sessionId,
     userMessage: message,
     assistantMessage,
@@ -262,5 +279,7 @@ export async function POST(request: Request) {
 
   return Response.json({
     reply: assistantMessage,
+    logSaved: logResult.saved,
+    logError: logResult.error,
   });
 }
