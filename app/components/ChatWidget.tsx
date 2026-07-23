@@ -23,12 +23,6 @@ const initialMessages: Message[] = [
   },
 ];
 
-const initialSuggestedQuestions = [
-  "SOAR 아키텍처 과제를 설명해줘",
-  "AWS 보안 실습은 어떤 걸 해봤나요?",
-  "보안관제 경험을 어떻게 활용할 수 있나요?",
-];
-
 function getOrCreateSessionId() {
   const storageKey = "portfolio-chat-session-id";
   const savedSessionId = window.localStorage.getItem(storageKey);
@@ -61,9 +55,7 @@ export default function ChatWidget() {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
-  const [suggestedQuestions, setSuggestedQuestions] = useState(
-    initialSuggestedQuestions,
-  );
+  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const [timings, setTimings] = useState<Timings | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -226,29 +218,33 @@ export default function ChatWidget() {
             </button>
           </form>
 
-          <div className="border-t border-border bg-surface px-4 py-3">
-            <div className="flex flex-wrap gap-2">
-              {suggestedQuestions.map((question) => (
-                <button
-                  key={question}
-                  type="button"
-                  disabled={isSending}
-                  onClick={() => void sendMessage(question)}
-                  className="rounded-md border border-border bg-background px-3 py-2 text-left text-xs font-medium text-foreground hover:border-blue-500 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:text-blue-400"
-                >
-                  {question}
-                </button>
-              ))}
-            </div>
+          {suggestedQuestions.length || timings ? (
+            <div className="border-t border-border bg-surface px-4 py-3">
+              {suggestedQuestions.length ? (
+                <div className="flex flex-wrap gap-2">
+                  {suggestedQuestions.map((question) => (
+                    <button
+                      key={question}
+                      type="button"
+                      disabled={isSending}
+                      onClick={() => void sendMessage(question)}
+                      className="rounded-md border border-border bg-background px-3 py-2 text-left text-xs font-medium text-foreground hover:border-blue-500 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:text-blue-400"
+                    >
+                      {question}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
 
-            {timings ? (
-              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                속도: 전체 {formatMs(timings.totalResponseTimeMs)} · AI{" "}
-                {formatMs(timings.aiResponseTimeMs)} · DB{" "}
-                {formatMs(timings.mongoSaveTimeMs)}
-              </p>
-            ) : null}
-          </div>
+              {timings ? (
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  속도: 전체 {formatMs(timings.totalResponseTimeMs)} · AI{" "}
+                  {formatMs(timings.aiResponseTimeMs)} · DB{" "}
+                  {formatMs(timings.mongoSaveTimeMs)}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
     </section>
