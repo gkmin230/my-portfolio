@@ -8,6 +8,12 @@ type Message = {
   content: string;
 };
 
+type Timings = {
+  aiResponseTimeMs?: number;
+  mongoSaveTimeMs?: number;
+  totalResponseTimeMs?: number;
+};
+
 const initialMessages: Message[] = [
   {
     id: 1,
@@ -15,6 +21,12 @@ const initialMessages: Message[] = [
     content:
       "안녕하세요. 제 이력과 클라우드 보안 준비 과정에 대해 궁금한 점을 물어봐 주세요.",
   },
+];
+
+const initialSuggestedQuestions = [
+  "SOAR 아키텍처 과제를 설명해줘",
+  "AWS 보안 실습은 어떤 걸 해봤나요?",
+  "보안관제 경험을 어떻게 활용할 수 있나요?",
 ];
 
 function getOrCreateSessionId() {
@@ -31,20 +43,62 @@ function getOrCreateSessionId() {
   return sessionId;
 }
 
+function wait(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function formatMs(value?: number) {
+  if (typeof value !== "number") {
+    return "-";
+  }
+
+  return `${value.toLocaleString()}ms`;
+}
+
 export default function ChatWidget() {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [suggestedQuestions, setSuggestedQuestions] = useState(
+    initialSuggestedQuestions,
+  );
+  const [timings, setTimings] = useState<Timings | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isSending]);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function showTypingMessage(content: string) {
+    const assistantMessageId = Date.now() + 1;
 
-    const trimmedMessage = message.trim();
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      {
+        id: assistantMessageId,
+        role: "assistant",
+        content: "",
+      },
+    ]);
+
+    for (let index = 0; index < content.length; index += 2) {
+      await wait(12);
+      const visibleContent = content.slice(0, index + 2);
+
+      setMessages((currentMessages) =>
+        currentMessages.map((chatMessage) =>
+          chatMessage.id === assistantMessageId
+            ? { ...chatMessage, content: visibleContent }
+            : chatMessage,
+        ),
+      );
+    }
+  }
+
+  async function sendMessage(nextMessage: string) {
+    const trimmedMessage = nextMessage.trim();
 
     if (!trimmedMessage || isSending) {
       return;
@@ -59,6 +113,7 @@ export default function ChatWidget() {
     setMessages((currentMessages) => [...currentMessages, userMessage]);
     setMessage("");
     setIsSending(true);
+    setTimings(null);
 
     try {
       const response = await fetch("/api/sendMessage", {
@@ -75,33 +130,36 @@ export default function ChatWidget() {
       const data = (await response.json()) as {
         reply?: string;
         error?: string;
+        suggestedQuestions?: string[];
+        timings?: Timings;
       };
 
-      const assistantMessage: Message = {
-        id: Date.now() + 1,
-        role: "assistant",
-        content:
-          data.reply ??
-          data.error ??
-          "응답을 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.",
-      };
+      const assistantMessage =
+        data.reply ??
+        data.error ??
+        "응답을 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.";
 
-      setMessages((currentMessages) => [
-        ...currentMessages,
-        assistantMessage,
-      ]);
+      if (data.suggestedQuestions?.length) {
+        setSuggestedQuestions(data.suggestedQuestions);
+      }
+
+      if (data.timings) {
+        setTimings(data.timings);
+      }
+
+      await showTypingMessage(assistantMessage);
     } catch {
-      setMessages((currentMessages) => [
-        ...currentMessages,
-        {
-          id: Date.now() + 1,
-          role: "assistant",
-          content: "네트워크 오류가 발생했습니다. 서버 상태를 확인해 주세요.",
-        },
-      ]);
+      await showTypingMessage(
+        "네트워크 오류가 발생했습니다. 서버 상태를 확인해 주세요.",
+      );
     } finally {
       setIsSending(false);
     }
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void sendMessage(message);
   }
 
   return (
@@ -138,7 +196,7 @@ export default function ChatWidget() {
               </div>
             ))}
 
-            {isSending ? (
+            {isSending && messages.at(-1)?.role === "user" ? (
               <div className="flex justify-start">
                 <div className="rounded-lg border border-border bg-surface-muted px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
                   답변 생성 중...
@@ -167,6 +225,30 @@ export default function ChatWidget() {
               전송
             </button>
           </form>
+
+          <div className="border-t border-border bg-surface px-4 py-3">
+            <div className="flex flex-wrap gap-2">
+              {suggestedQuestions.map((question) => (
+                <button
+                  key={question}
+                  type="button"
+                  disabled={isSending}
+                  onClick={() => void sendMessage(question)}
+                  className="rounded-md border border-border bg-background px-3 py-2 text-left text-xs font-medium text-foreground hover:border-blue-500 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:text-blue-400"
+                >
+                  {question}
+                </button>
+              ))}
+            </div>
+
+            {timings ? (
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                속도: 전체 {formatMs(timings.totalResponseTimeMs)} · AI{" "}
+                {formatMs(timings.aiResponseTimeMs)} · DB{" "}
+                {formatMs(timings.mongoSaveTimeMs)}
+              </p>
+            ) : null}
+          </div>
         </div>
       </div>
     </section>

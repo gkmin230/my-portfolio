@@ -21,6 +21,7 @@ AWS, WAF, GuardDuty, Lambda 자동화 실습을 진행하고 있습니다.
 - GuardDuty를 활용한 위협 탐지 실습
 - Lambda를 활용한 보안 자동화 대응 실습
 - 클라우드 보안과 DevSecOps 역량 강화
+- 위협탐지 및 자동대응 SOAR 아키텍처 과제 수행
 
 답변 규칙:
 - 사용자의 이력서 기반 AI 아바타처럼 1인칭으로 답변합니다.
@@ -50,6 +51,9 @@ type ChatLog =
       assistantMessage: string;
       status: "success";
       responseTimeMs: number;
+      aiResponseTimeMs: number;
+      mongoSaveTimeMs?: number;
+      suggestedQuestions: string[];
       createdAt: Date;
     }
   | {
@@ -59,24 +63,83 @@ type ChatLog =
       errorType: string;
       errorMessage: string;
       responseTimeMs: number;
+      aiResponseTimeMs?: number;
+      mongoSaveTimeMs?: number;
       createdAt: Date;
     };
 
 async function saveChatLog(chatLog: ChatLog) {
+  const mongoStartedAt = Date.now();
+
   try {
     const db = await getMongoDatabase();
+    const collection = db.collection("chat_logs");
+    const result = await collection.insertOne({
+      ...chatLog,
+      mongoSaveTimeMs: 0,
+    });
+    const mongoSaveTimeMs = Date.now() - mongoStartedAt;
 
-    await db.collection("chat_logs").insertOne(chatLog);
+    await collection.updateOne(
+      { _id: result.insertedId },
+      { $set: { mongoSaveTimeMs } },
+    );
 
-    return { saved: true };
+    return { saved: true, mongoSaveTimeMs };
   } catch (error) {
+    const mongoSaveTimeMs = Date.now() - mongoStartedAt;
+
     console.error("채팅 로그 MongoDB 저장 실패:", error);
 
     return {
       saved: false,
+      mongoSaveTimeMs,
       error: error instanceof Error ? error.message : "알 수 없는 저장 오류",
     };
   }
+}
+
+function getSuggestedQuestions(message: string, reply: string) {
+  const source = `${message} ${reply}`.toLowerCase();
+  const suggestions: string[] = [];
+
+  function add(question: string) {
+    if (!suggestions.includes(question)) {
+      suggestions.push(question);
+    }
+  }
+
+  if (source.includes("soar") || source.includes("자동대응")) {
+    add("SOAR 아키텍처에서 자동대응 흐름을 설명해줘");
+    add("위협 탐지 후 Lambda는 어떤 역할을 하나요?");
+  }
+
+  if (source.includes("guardduty") || source.includes("위협")) {
+    add("GuardDuty 탐지 결과를 어떻게 분석했나요?");
+    add("탐지된 위협에 어떻게 대응했나요?");
+  }
+
+  if (source.includes("waf") || source.includes("웹")) {
+    add("WAF로 어떤 공격을 방어할 수 있나요?");
+  }
+
+  if (source.includes("lambda") || source.includes("자동화")) {
+    add("Lambda 자동화 대응을 더 자세히 설명해줘");
+  }
+
+  if (source.includes("보안관제") || source.includes("soc")) {
+    add("보안관제 경험이 클라우드 보안에 어떻게 도움이 되나요?");
+  }
+
+  if (source.includes("devsecops")) {
+    add("DevSecOps를 준비하는 이유는 무엇인가요?");
+  }
+
+  add("이 프로젝트에서 가장 어려웠던 점은 무엇인가요?");
+  add("면접에서 이 경험을 어떻게 설명하면 좋을까요?");
+  add("AWS 보안 실습 내용을 구체적으로 말해줘");
+
+  return suggestions.slice(0, 3);
 }
 
 function getGeminiErrorMessage(message?: string) {
@@ -155,6 +218,7 @@ export async function POST(request: Request) {
       errorType: "validation_error",
       errorMessage: "message 값은 비어 있지 않은 문자열이어야 합니다.",
       responseTimeMs: Date.now() - startedAt,
+      aiResponseTimeMs: 0,
       createdAt: new Date(),
     });
 
@@ -179,6 +243,7 @@ export async function POST(request: Request) {
       errorType: "missing_api_key",
       errorMessage,
       responseTimeMs: Date.now() - startedAt,
+      aiResponseTimeMs: 0,
       createdAt: new Date(),
     });
 
@@ -193,6 +258,8 @@ export async function POST(request: Request) {
   }
 
   let geminiResponse: Response;
+  const aiStartedAt = Date.now();
+  let aiResponseTimeMs = 0;
 
   try {
     geminiResponse = await fetch(
@@ -214,7 +281,9 @@ export async function POST(request: Request) {
         }),
       },
     );
+    aiResponseTimeMs = Date.now() - aiStartedAt;
   } catch (error) {
+    aiResponseTimeMs = Date.now() - aiStartedAt;
     const errorMessage =
       error instanceof Error ? error.message : "Gemini API 네트워크 오류";
 
@@ -225,6 +294,7 @@ export async function POST(request: Request) {
       errorType: "network_error",
       errorMessage,
       responseTimeMs: Date.now() - startedAt,
+      aiResponseTimeMs,
       createdAt: new Date(),
     });
 
@@ -252,6 +322,7 @@ export async function POST(request: Request) {
       errorType: "gemini_error",
       errorMessage,
       responseTimeMs: Date.now() - startedAt,
+      aiResponseTimeMs,
       createdAt: new Date(),
     });
 
@@ -267,6 +338,7 @@ export async function POST(request: Request) {
 
   const reply = getGeminiReply(data);
   const assistantMessage = reply || "응답 텍스트를 찾지 못했습니다.";
+  const suggestedQuestions = getSuggestedQuestions(message, assistantMessage);
 
   const logResult = await saveChatLog({
     sessionId,
@@ -274,11 +346,20 @@ export async function POST(request: Request) {
     assistantMessage,
     status: "success",
     responseTimeMs: Date.now() - startedAt,
+    aiResponseTimeMs,
+    suggestedQuestions,
     createdAt: new Date(),
   });
+  const totalResponseTimeMs = Date.now() - startedAt;
 
   return Response.json({
     reply: assistantMessage,
+    suggestedQuestions,
+    timings: {
+      aiResponseTimeMs,
+      mongoSaveTimeMs: logResult.mongoSaveTimeMs,
+      totalResponseTimeMs,
+    },
     logSaved: logResult.saved,
     logError: logResult.error,
   });
