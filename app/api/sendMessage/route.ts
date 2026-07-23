@@ -99,9 +99,77 @@ async function saveChatLog(chatLog: ChatLog) {
   }
 }
 
-function getSuggestedQuestions(message: string, reply: string) {
-  const source = `${message} ${reply}`.toLowerCase();
+function getSuggestedQuestions(reply: string) {
+  const source = reply.toLowerCase();
   const suggestions: string[] = [];
+  const topicRules = [
+    {
+      label: "SOAR 아키텍처",
+      keywords: ["soar", "자동대응", "자동 대응", "플레이북"],
+      questions: [
+        "방금 말한 SOAR 흐름을 단계별로 더 설명해줘",
+        "SOAR에서 자동화하면 좋은 대응은 뭐였나요?",
+      ],
+    },
+    {
+      label: "GuardDuty",
+      keywords: ["guardduty", "탐지", "위협"],
+      questions: [
+        "GuardDuty 탐지 결과를 어떻게 판단했나요?",
+        "탐지된 위협을 실제로 어떻게 대응했나요?",
+      ],
+    },
+    {
+      label: "Lambda",
+      keywords: ["lambda", "람다", "자동화"],
+      questions: [
+        "Lambda 자동화 로직을 더 구체적으로 설명해줘",
+        "Lambda가 실행된 뒤 어떤 조치가 이어지나요?",
+      ],
+    },
+    {
+      label: "WAF",
+      keywords: ["waf", "웹 공격", "방어"],
+      questions: [
+        "WAF로 막을 수 있는 공격 예시를 들어줘",
+        "WAF 룰을 어떻게 설계했다고 말하면 좋을까요?",
+      ],
+    },
+    {
+      label: "보안관제 경험",
+      keywords: ["보안관제", "관제", "분석", "대응"],
+      questions: [
+        "보안관제 경험이 이 프로젝트에 어떻게 연결되나요?",
+        "실무 관제 경험 중 어떤 부분이 강점인가요?",
+      ],
+    },
+    {
+      label: "DevSecOps",
+      keywords: ["devsecops", "보안 내재화", "파이프라인"],
+      questions: [
+        "DevSecOps 관점에서 이 경험을 어떻게 설명할까요?",
+        "앞으로 DevSecOps 역량은 어떻게 보완할 계획인가요?",
+      ],
+    },
+    {
+      label: "AWS 보안",
+      keywords: ["aws", "클라우드", "cloudtrail", "eventbridge", "iam"],
+      questions: [
+        "AWS 보안 구성에서 가장 중요한 포인트는 뭐였나요?",
+        "클라우드 보안 엔지니어 관점에서 배운 점은 무엇인가요?",
+      ],
+    },
+  ]
+    .map((rule) => ({
+      ...rule,
+      firstIndex: Math.min(
+        ...rule.keywords
+          .map((keyword) => source.indexOf(keyword))
+          .filter((index) => index >= 0),
+      ),
+    }))
+    .filter((rule) => Number.isFinite(rule.firstIndex))
+    .sort((firstRule, secondRule) => firstRule.firstIndex - secondRule.firstIndex);
 
   function add(question: string) {
     if (!suggestions.includes(question)) {
@@ -109,35 +177,23 @@ function getSuggestedQuestions(message: string, reply: string) {
     }
   }
 
-  if (source.includes("soar") || source.includes("자동대응")) {
-    add("SOAR 아키텍처에서 자동대응 흐름을 설명해줘");
-    add("위협 탐지 후 Lambda는 어떤 역할을 하나요?");
+  topicRules.forEach((rule) => {
+    rule.questions.forEach(add);
+  });
+
+  const mainTopic = topicRules[0]?.label ?? "방금 답변한 내용";
+
+  if (source.includes("어려") || source.includes("한계")) {
+    add(`${mainTopic}에서 어려웠던 점은 어떻게 해결했나요?`);
   }
 
-  if (source.includes("guardduty") || source.includes("위협")) {
-    add("GuardDuty 탐지 결과를 어떻게 분석했나요?");
-    add("탐지된 위협에 어떻게 대응했나요?");
+  if (source.includes("준비") || source.includes("계획")) {
+    add(`${mainTopic}을 더 발전시키려면 뭘 준비해야 하나요?`);
   }
 
-  if (source.includes("waf") || source.includes("웹")) {
-    add("WAF로 어떤 공격을 방어할 수 있나요?");
-  }
-
-  if (source.includes("lambda") || source.includes("자동화")) {
-    add("Lambda 자동화 대응을 더 자세히 설명해줘");
-  }
-
-  if (source.includes("보안관제") || source.includes("soc")) {
-    add("보안관제 경험이 클라우드 보안에 어떻게 도움이 되나요?");
-  }
-
-  if (source.includes("devsecops")) {
-    add("DevSecOps를 준비하는 이유는 무엇인가요?");
-  }
-
-  add("이 프로젝트에서 가장 어려웠던 점은 무엇인가요?");
-  add("면접에서 이 경험을 어떻게 설명하면 좋을까요?");
-  add("AWS 보안 실습 내용을 구체적으로 말해줘");
+  add(`${mainTopic}을 면접에서 말하기 좋게 정리해줘`);
+  add(`${mainTopic}에서 제가 직접 한 역할은 무엇인가요?`);
+  add(`${mainTopic}을 실제 사례처럼 더 자세히 말해줘`);
 
   return suggestions.slice(0, 3);
 }
@@ -338,7 +394,7 @@ export async function POST(request: Request) {
 
   const reply = getGeminiReply(data);
   const assistantMessage = reply || "응답 텍스트를 찾지 못했습니다.";
-  const suggestedQuestions = getSuggestedQuestions(message, assistantMessage);
+  const suggestedQuestions = getSuggestedQuestions(assistantMessage);
 
   const logResult = await saveChatLog({
     sessionId,
