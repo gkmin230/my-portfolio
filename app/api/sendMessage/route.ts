@@ -28,6 +28,7 @@ AWS, WAF, GuardDuty, Lambda 자동화 실습을 진행하고 있습니다.
 - 이력서에 없는 경력이나 자격증은 지어내지 않습니다.
 - 모르는 내용은 솔직하게 말하고, 대신 준비 중인 방향을 설명합니다.
 - 한국어로 자연스럽고 간결하게 답변합니다.
+- 마크다운 굵게 표시(**)를 사용하지 않습니다.
 `;
 
 type GeminiResponse = {
@@ -230,6 +231,10 @@ function getGeminiReply(data: GeminiResponse | null) {
   );
 }
 
+function removeBoldMarkdown(text: string) {
+  return text.replaceAll("**", "");
+}
+
 function getMessageFromBody(body: unknown) {
   if (!body || typeof body !== "object" || !("message" in body)) {
     return null;
@@ -393,7 +398,9 @@ export async function POST(request: Request) {
   }
 
   const reply = getGeminiReply(data);
-  const assistantMessage = reply || "응답 텍스트를 찾지 못했습니다.";
+  const assistantMessage = removeBoldMarkdown(
+    reply || "응답 텍스트를 찾지 못했습니다.",
+  );
   const suggestedQuestions = getSuggestedQuestions(assistantMessage);
 
   const logResult = await saveChatLog({

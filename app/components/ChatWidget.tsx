@@ -51,6 +51,10 @@ function formatMs(value?: number) {
   return `${value.toLocaleString()}ms`;
 }
 
+function removeBoldMarkdown(text: string) {
+  return text.replaceAll("**", "");
+}
+
 export default function ChatWidget() {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [message, setMessage] = useState("");
@@ -65,6 +69,7 @@ export default function ChatWidget() {
 
   async function showTypingMessage(content: string) {
     const assistantMessageId = Date.now() + 1;
+    const plainContent = removeBoldMarkdown(content);
 
     setMessages((currentMessages) => [
       ...currentMessages,
@@ -75,9 +80,9 @@ export default function ChatWidget() {
       },
     ]);
 
-    for (let index = 0; index < content.length; index += 2) {
+    for (let index = 0; index < plainContent.length; index += 2) {
       await wait(12);
-      const visibleContent = content.slice(0, index + 2);
+      const visibleContent = plainContent.slice(0, index + 2);
 
       setMessages((currentMessages) =>
         currentMessages.map((chatMessage) =>
