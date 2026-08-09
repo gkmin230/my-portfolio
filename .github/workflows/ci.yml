@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run lint
+        run: npm run lint
+
+      - name: Run build
+        run: npm run build
+
+      - name: Notify Discord
+        if: always()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          JOB_STATUS: ${{ job.status }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          REPOSITORY: ${{ github.repository }}
+          BRANCH_NAME: ${{ github.ref_name }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "DISCORD_WEBHOOK_URL secret is not set. Skipping notification."
+            exit 0
+          fi
+
+          node - <<'EOF'
+          async function main() {
+            const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
+            const shortSha = process.env.COMMIT_SHA.slice(0, 7);
+            const content = [
+              `GitHub Actions 결과: ${process.env.JOB_STATUS}`,
+              `저장소: ${process.env.REPOSITORY}`,
+              `브랜치: ${process.env.BRANCH_NAME}`,
+              `커밋: ${shortSha} - ${process.env.COMMIT_MESSAGE}`,
+            ].join("\n");
+
+            await fetch(webhookUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ content }),
+            });
+          }
+
+          main().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          EOF
